@@ -220,15 +220,15 @@ export default function PopmartMarketPro() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
                 <label className="text-xs text-gray-500">标明价格 (元)</label>
-                <input placeholder="例如：199" className="w-full p-3.5 bg-gray-50 border border-gray-100 rounded-lg outline-none focus:border-[#2D63FF] text-sm font-bold text-[#E60012]" value={formData.price} onChange={e=>setFormData({...formData, price:e.target.value})} type="number"/>
+                <input placeholder="例如：534" className="w-full p-3.5 bg-gray-50 border border-gray-100 rounded-lg outline-none focus:border-[#2D63FF] text-sm font-bold text-[#E60012]" value={formData.price} onChange={e=>setFormData({...formData, price:e.target.value})} type="number"/>
               </div>
               <div className="space-y-2">
                 <label className="text-xs text-gray-500">门店全名</label>
-                <input placeholder="例如：北京三里屯店" className="w-full p-3.5 bg-gray-50 border border-gray-100 rounded-lg outline-none focus:border-[#2D63FF] text-sm" value={formData.shop} onChange={e=>setFormData({...formData, shop:e.target.value})} />
+                <input placeholder="例如：上海北外滩来福士店" className="w-full p-3.5 bg-gray-50 border border-gray-100 rounded-lg outline-none focus:border-[#2D63FF] text-sm" value={formData.shop} onChange={e=>setFormData({...formData, shop:e.target.value})} />
               </div>
               <div className="space-y-2">
                 <label className="text-xs text-gray-500">商品全名</label>
-                <input placeholder="例如：Molly 散货" className="w-full p-3.5 bg-gray-50 border border-gray-100 rounded-lg outline-none focus:border-[#2D63FF] text-sm" value={formData.item} onChange={e=>setFormData({...formData, item:e.target.value})} />
+                <input placeholder="例如：Angry Molly - 心火怒放系列毛绒挂件盲盒" className="w-full p-3.5 bg-gray-50 border border-gray-100 rounded-lg outline-none focus:border-[#2D63FF] text-sm" value={formData.item} onChange={e=>setFormData({...formData, item:e.target.value})} />
               </div>
               <div className="space-y-2">
                 <label className="text-xs text-gray-500">个人微信号</label>
@@ -285,13 +285,13 @@ export default function PopmartMarketPro() {
                       <option value="sell">仅看出售</option>
                       <option value="buy">仅看求购</option>
                   </select>
-                  <input placeholder="🔍 搜门店 (如：三里屯)" className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 outline-none text-sm focus:border-[#2D63FF]" value={searchStore} onChange={e => setSearchStore(e.target.value)} />
-                  <input placeholder="🔍 搜商品 (如：散货)" className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 outline-none text-sm focus:border-[#2D63FF]" value={searchItem} onChange={e => setSearchItem(e.target.value)} />
+                  <input placeholder="🔍 搜门店 (如：上海北外滩来福士店)" className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 outline-none text-sm focus:border-[#2D63FF]" value={searchStore} onChange={e => setSearchStore(e.target.value)} />
+                  <input placeholder="🔍 搜商品 (如：Angry Molly - 心火怒放系列毛绒挂件盲盒)" className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 outline-none text-sm focus:border-[#2D63FF]" value={searchItem} onChange={e => setSearchItem(e.target.value)} />
               </div>
               
               <div className="flex flex-wrap gap-2 items-center">
                 <span className="text-xs text-gray-400 font-medium ml-1">热门搜索：</span>
-                {['静安大悦城', '王府井', 'LABUBU', '心动马卡龙', 'MEGA'].map(tag => (
+                {['宁波', '武汉', '星星人', '心火怒放', 'labubu'].map(tag => (
                   <button 
                     key={tag} 
                     onClick={() => {
