@@ -3,20 +3,21 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-// 1. 初始化 Supabase 连接
+// 1. 初始化 Supabase
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-export default function PopmartMarket() {
+export default function PopmartMarketPro() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [hasAgreed, setHasAgreed] = useState(false);
   const [phone, setPhone] = useState('');
   const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // 搜索与筛选状态
-  const [searchTerm, setSearchTerm] = useState('');
+  // --- 搜索状态：拆分为门店和商品 ---
+  const [searchStore, setSearchStore] = useState(''); 
+  const [searchItem, setSearchItem] = useState('');   
   const [filterType, setFilterType] = useState('all'); 
   const [sortOrder, setSortOrder] = useState('desc'); 
 
@@ -26,7 +27,7 @@ export default function PopmartMarket() {
     expiryType: 'today', customDate: '' 
   });
 
-  // 获取数据库数据
+  // 获取数据
   const fetchPosts = async () => {
     try {
       const { data, error } = await supabase
@@ -35,225 +36,216 @@ export default function PopmartMarket() {
         .order('created_at', { ascending: false });
       if (data) {
         const now = new Date();
-        // 过滤掉已过期的信息
         const validPosts = data.filter(post => !post.expires_at || new Date(post.expires_at) > now);
         setPosts(validPosts);
       }
-      if (error) console.error("读取失败:", error.message);
-    } catch (err) {
-      console.error("连接异常:", err);
-    }
+    } catch (err) { console.error("读取失败", err); }
   };
 
   useEffect(() => {
     if (isLoggedIn && hasAgreed) {
       fetchPosts();
       const channel = supabase.channel('realtime_posts')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, () => {
-          fetchPosts();
-        }).subscribe();
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, () => fetchPosts())
+        .subscribe();
       return () => { supabase.removeChannel(channel); };
     }
   }, [isLoggedIn, hasAgreed]);
 
-  // 计算过期时间
-  const getExpiryDate = () => {
-    const d = new Date();
-    if (formData.expiryType === 'today') {
-      d.setHours(23, 59, 59, 999);
-    } else if (formData.expiryType === 'tomorrow') {
-      d.setDate(d.getDate() + 1);
-      d.setHours(23, 59, 59, 999);
-    } else if (formData.customDate) {
-      return new Date(formData.customDate + "T23:59:59");
-    }
-    return d;
-  };
-
-  // 发布函数
+  // 发布逻辑
   const handlePublish = async (type: 'sell' | 'buy') => {
-    if (!formData.price || !formData.item || !formData.contact) return alert('请填写完整信息');
+    if (!formData.price || !formData.item || !formData.contact || !formData.shop) return alert('信息不完整');
     setLoading(true);
     
+    const getExpiryDate = () => {
+        const d = new Date();
+        if (formData.expiryType === 'today') d.setHours(23, 59, 59);
+        else if (formData.expiryType === 'tomorrow') { d.setDate(d.getDate() + 1); d.setHours(23, 59, 59); }
+        else if (formData.customDate) return new Date(formData.customDate + "T23:59:59");
+        return d;
+    };
+
     const { error } = await supabase.from('posts').insert([{ 
-      ...formData, 
-      type, 
-      user_phone: phone,
+      ...formData, type, user_phone: phone,
       expires_at: getExpiryDate().toISOString(),
       price: parseFloat(formData.price) 
     }]);
 
-    if (error) {
-      alert('发布失败: ' + error.message);
-    } else {
-      alert('🎉 发布成功！');
+    if (error) alert('发布失败: ' + error.message);
+    else {
       setFormData({ price: '', shop: '', item: '', contact: '', expiryType: 'today', customDate: '' });
+      fetchPosts();
     }
     setLoading(false);
   };
 
-  // 删除函数
+  // --- 补全缺失的删除函数 ---
   const handleDelete = async (id: string) => {
-    if (confirm('确定要删除这条信息吗？')) {
-      await supabase.from('posts').delete().eq('id', id);
-      fetchPosts();
+    if (confirm('确定要撤回这条专业发布信息吗？')) {
+      const { error } = await supabase.from('posts').delete().eq('id', id);
+      if (error) alert('删除失败');
+      else fetchPosts();
     }
   };
 
-  // 综合过滤与排序逻辑
+  // --- 核心过滤逻辑：双重匹配 ---
   const displayPosts = posts
     .filter(p => (filterType === 'all' || p.type === filterType))
-    .filter(p => (p.shop.includes(searchTerm) || p.item.includes(searchTerm)))
+    .filter(p => p.shop.toLowerCase().includes(searchStore.toLowerCase()))
+    .filter(p => p.item.toLowerCase().includes(searchItem.toLowerCase()))
     .sort((a, b) => sortOrder === 'desc' ? b.price - a.price : a.price - b.price);
 
-  // --- 1. 免责声明弹窗 ---
-  if (isLoggedIn && !hasAgreed) {
-    return (
-      <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-md">
-        <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
-          <h2 className="text-2xl font-black mb-6 text-center text-red-500 underline decoration-yellow-400">自提交流站须知</h2>
-          <div className="text-[13px] text-gray-700 space-y-4 leading-relaxed overflow-y-auto max-h-[60vh] pr-2">
-            <p><strong>1. 信息中转：</strong>本平台仅提供信息发布，不提供担保及支付服务。</p>
-            <p><strong>2. 风险自担：</strong>请核实对方身份，保留聊天和支付凭证。</p>
-            <p><strong>3. 严禁违规：</strong>严禁发布虚假信息，违者永久封禁微信号。</p>
-            <p><strong>4. 责任豁免：</strong>平台不对交易产生的任何损失负责。</p>
-            <p><strong>5. 内容声明：</strong>用户言论不代表本站立场。</p>
-            <p><strong>6. 隐私保护：</strong>微信号仅在被点击“复制”时显示并计费。</p>
-          </div>
-          <button 
-            onClick={() => setHasAgreed(true)} 
-            className="w-full bg-red-500 text-white py-4 rounded-2xl mt-8 font-black shadow-xl active:scale-95 transition-all"
-          >阅读并同意协议</button>
-        </div>
-      </div>
-    );
-  }
-
-  // --- 2. 登录页 ---
+  // 登录页
   if (!isLoggedIn) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-[#FDFDFD]">
-        <div className="p-10 w-full max-w-sm text-center">
-          <div className="text-5xl mb-6 animate-bounce">📦</div>
-          <h1 className="text-3xl font-black text-black mb-2 tracking-tighter">POPMART</h1>
-          <p className="text-gray-400 text-xs mb-10 tracking-[0.3em] font-bold">专注自提交流</p>
-          <input 
-            type="text" placeholder="输入11位手机号" 
-            className="w-full p-4 bg-gray-100 border-none rounded-2xl mb-4 text-center text-black font-bold outline-none"
-            value={phone} onChange={e => setPhone(e.target.value)}
-          />
-          <button 
-            onClick={() => phone.length === 11 ? setIsLoggedIn(true) : alert('手机号不对')} 
-            className="w-full bg-black text-white py-4 rounded-2xl font-black hover:opacity-80 transition-all"
-          >进入大厅</button>
+      <div className="flex flex-col items-center justify-center min-h-screen bg-white font-sans">
+        <div className="w-full max-w-xs text-center space-y-12">
+          <div className="space-y-2">
+            <h1 className="text-4xl font-light tracking-tighter text-black">POPMART <span className="font-bold text-pink-500 text-3xl">PRO</span></h1>
+            <p className="text-[10px] tracking-[0.4em] text-gray-400 font-bold uppercase">Professional Exchange</p>
+          </div>
+          <div className="space-y-4">
+            <input 
+              type="text" placeholder="手机号" 
+              className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl text-center outline-none focus:ring-1 focus:ring-black transition-all font-medium"
+              value={phone} onChange={e => setPhone(e.target.value)}
+            />
+            <button 
+              onClick={() => phone.length === 11 ? setIsLoggedIn(true) : alert('手机号格式错误')} 
+              className="w-full bg-black text-white py-4 rounded-2xl font-bold active:scale-95 transition-transform"
+            >验证并进入</button>
+          </div>
         </div>
       </div>
     );
   }
 
-  // --- 3. 主大厅界面 ---
+  // 免责声明
+  if (isLoggedIn && !hasAgreed) {
+    return (
+        <div className="fixed inset-0 bg-white/95 backdrop-blur-2xl flex items-center justify-center z-50 p-8">
+            <div className="max-w-sm w-full space-y-8">
+                <h2 className="text-3xl font-bold tracking-tight text-black">大户交易守则</h2>
+                <div className="text-sm text-gray-500 leading-relaxed space-y-4 font-medium">
+                    <p>• 本系统仅供信息对等，严禁任何形式的站内直接交易。</p>
+                    <p>• 发现虚假信息请联系：zqbzqb888@outlook.com。</p>
+                    <p>• 点击同意即代表您已了解线下自提风险并自担责任。</p>
+                </div>
+                <button onClick={() => setHasAgreed(true)} className="w-full bg-black text-white py-5 rounded-3xl font-bold active:scale-95 transition-all shadow-2xl">确认知晓</button>
+            </div>
+        </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-[#F7F7F7] pb-24 text-black">
-      {/* 滚动横幅 - 使用标准 CSS 避免报错 */}
-      <div className="bg-yellow-400 text-red-700 py-2 font-bold text-xs shadow-sm overflow-hidden sticky top-0 z-40">
-        <div className="whitespace-nowrap animate-[scroll_30s_linear_infinite] inline-block">
-          ⚠️ 已出售，已求购完，请自行删除发布信息，以防骚扰！ | 温馨提示：请在加好友后，自觉互传交易记录，谨慎交易 | 联系邮箱：zqbzqb888@outlook.com &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-          ⚠️ 已出售，已求购完，请自行删除发布信息，以防骚扰！ | 温馨提示：请在加好友后，自觉互传交易记录，谨慎交易 | 联系邮箱：zqbzqb888@outlook.com
+    <div className="min-h-screen bg-[#FBFBFD] text-[#1D1D1F] antialiased pb-20">
+      {/* 顶部黑金滚动条 */}
+      <div className="bg-black text-white py-2 overflow-hidden sticky top-0 z-50 shadow-lg">
+        <div className="whitespace-nowrap animate-scroll inline-block text-[10px] font-bold tracking-[0.2em] opacity-90">
+          REAL-TIME DATA MONITORING / 实时大厅已启动 / 线下核实 / 严禁欺诈 &nbsp;&nbsp;&nbsp;&nbsp; 
+          SYSTEM STATUS: ONLINE / 交易请保留聊天凭证 / 已售信息请及时撤回
         </div>
       </div>
 
-      <style jsx>{`
-        @keyframes scroll {
-          0% { transform: translateX(0); }
-          100% { transform: translateX(-50%); }
-        }
+      <style jsx global>{`
+        @keyframes scroll { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+        .animate-scroll { animation: scroll 25s linear infinite; }
+        .neon-sell:hover { box-shadow: 0 0 30px rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.2) !important; }
+        .neon-buy:hover { box-shadow: 0 0 30px rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.2) !important; }
       `}</style>
 
-      <main className="max-w-4xl mx-auto p-4">
-        {/* 发布表单 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 my-8">
-          {/* 出售 */}
-          <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100">
-            <h3 className="font-black text-red-500 mb-6 flex items-center gap-2">🔴 发布出售自提</h3>
-            <div className="space-y-4">
-              <input type="number" placeholder="标价 (元)" className="w-full p-3 bg-gray-50 rounded-2xl border-none font-bold" value={formData.price} onChange={e=>setFormData({...formData, price:e.target.value})} />
-              <input placeholder="门店全名" className="w-full p-3 bg-gray-50 rounded-2xl border-none font-bold" value={formData.shop} onChange={e=>setFormData({...formData, shop:e.target.value})} />
-              <input placeholder="商品全名" className="w-full p-3 bg-gray-50 rounded-2xl border-none font-bold" value={formData.item} onChange={e=>setFormData({...formData, item:e.target.value})} />
-              <input placeholder="个人微信号" className="w-full p-3 bg-gray-50 rounded-2xl border-none font-bold" value={formData.contact} onChange={e=>setFormData({...formData, contact:e.target.value})} />
-              <div className="flex items-center text-[10px] text-gray-400 font-bold px-1">
-                到期时间:
-                <select className="ml-2 bg-transparent text-gray-600 outline-none" value={formData.expiryType} onChange={e=>setFormData({...formData, expiryType:e.target.value})}>
-                  <option value="today">今天 (23:59)</option>
-                  <option value="tomorrow">明天 (23:59)</option>
-                  <option value="custom">自选日期</option>
-                </select>
-                {formData.expiryType === 'custom' && <input type="date" className="ml-2" onChange={e=>setFormData({...formData, customDate:e.target.value})} />}
-              </div>
-              <button onClick={()=>handlePublish('sell')} className="w-full bg-red-500 text-white py-4 rounded-2xl font-black shadow-lg shadow-red-100 active:scale-95 transition-all">立即发布</button>
+      <main className="max-w-2xl mx-auto px-6 py-12">
+        {/* 专业发布面板 */}
+        <section className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+          <div className="bg-white rounded-[2.5rem] p-6 shadow-sm border border-gray-100 space-y-4 neon-sell transition-all">
+            <div className="flex justify-between items-center px-1">
+              <span className="text-[10px] font-black tracking-widest text-red-500">PRO SELL</span>
+              <span className="text-[10px] text-gray-300">发布出售</span>
+            </div>
+            <input placeholder="价格 (元)" className="w-full p-4 bg-gray-50 rounded-2xl outline-none font-bold text-sm" value={formData.price} onChange={e=>setFormData({...formData, price:e.target.value})} />
+            <input placeholder="自提门店" className="w-full p-4 bg-gray-50 rounded-2xl outline-none font-bold text-sm" value={formData.shop} onChange={e=>setFormData({...formData, shop:e.target.value})} />
+            <input placeholder="商品全名" className="w-full p-4 bg-gray-50 rounded-2xl outline-none font-bold text-sm" value={formData.item} onChange={e=>setFormData({...formData, item:e.target.value})} />
+            <input placeholder="个人微信号" className="w-full p-4 bg-gray-50 rounded-2xl outline-none font-bold text-sm" value={formData.contact} onChange={e=>setFormData({...formData, contact:e.target.value})} />
+            <button onClick={()=>handlePublish('sell')} className="w-full bg-red-500 text-white py-4 rounded-2xl font-bold active:scale-95 transition-all shadow-xl shadow-red-50">立即上架</button>
+          </div>
+
+          <div className="bg-white rounded-[2.5rem] p-6 shadow-sm border border-gray-100 space-y-4 neon-buy transition-all">
+            <div className="flex justify-between items-center px-1">
+              <span className="text-[10px] font-black tracking-widest text-blue-500">PRO BUY</span>
+              <span className="text-[10px] text-gray-300">发布求购</span>
+            </div>
+            <input placeholder="求购价" className="w-full p-4 bg-gray-50 rounded-2xl outline-none font-bold text-sm" value={formData.price} onChange={e=>setFormData({...formData, price:e.target.value})} />
+            <input placeholder="目标门店" className="w-full p-4 bg-gray-50 rounded-2xl outline-none font-bold text-sm" value={formData.shop} onChange={e=>setFormData({...formData, shop:e.target.value})} />
+            <input placeholder="求购商品" className="w-full p-4 bg-gray-50 rounded-2xl outline-none font-bold text-sm" value={formData.item} onChange={e=>setFormData({...formData, item:e.target.value})} />
+            <input placeholder="个人微信号" className="w-full p-4 bg-gray-50 rounded-2xl outline-none font-bold text-sm" value={formData.contact} onChange={e=>setFormData({...formData, contact:e.target.value})} />
+            <button onClick={()=>handlePublish('buy')} className="w-full bg-blue-500 text-white py-4 rounded-2xl font-bold active:scale-95 transition-all shadow-xl shadow-blue-50">发布需求</button>
+          </div>
+        </section>
+
+        {/* 拆分搜索控制台 */}
+        <section className="mb-8 space-y-4">
+          <div className="flex items-end justify-between px-2 mb-2">
+            <h2 className="text-3xl font-bold tracking-tighter">实时大厅</h2>
+            <div className="flex gap-4 text-[10px] font-black text-gray-400">
+              <select className="bg-transparent outline-none cursor-pointer hover:text-black" onChange={e=>setFilterType(e.target.value)}>
+                <option value="all">全部</option>
+                <option value="sell">出售</option>
+                <option value="buy">求购</option>
+              </select>
+              <select className="bg-transparent outline-none cursor-pointer hover:text-black" onChange={e=>setSortOrder(e.target.value)}>
+                <option value="desc">价格降序</option>
+                <option value="asc">价格升序</option>
+              </select>
             </div>
           </div>
-          
-          {/* 求购 */}
-          <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100">
-            <h3 className="font-black text-blue-500 mb-6 flex items-center gap-2">🔵 发布求购信息</h3>
-            <div className="space-y-4">
-              <input type="number" placeholder="求购价格 (元)" className="w-full p-3 bg-gray-50 rounded-2xl border-none font-bold" value={formData.price} onChange={e=>setFormData({...formData, price:e.target.value})} />
-              <input placeholder="目标门店" className="w-full p-3 bg-gray-50 rounded-2xl border-none font-bold" value={formData.shop} onChange={e=>setFormData({...formData, shop:e.target.value})} />
-              <input placeholder="求购商品" className="w-full p-3 bg-gray-50 rounded-2xl border-none font-bold" value={formData.item} onChange={e=>setFormData({...formData, item:e.target.value})} />
-              <input placeholder="个人微信号" className="w-full p-3 bg-gray-50 rounded-2xl border-none font-bold" value={formData.contact} onChange={e=>setFormData({...formData, contact:e.target.value})} />
-              <button onClick={()=>handlePublish('buy')} className="w-full bg-blue-500 text-white py-4 rounded-2xl font-black shadow-lg shadow-blue-100 active:scale-95 transition-all">发布求购</button>
-            </div>
-          </div>
-        </div>
 
-        {/* 筛选大厅 */}
-        <div className="bg-white p-5 rounded-3xl shadow-sm mb-8 flex flex-col sm:flex-row gap-4">
-          <input 
-            placeholder="🔍 搜索门店或商品名称..." 
-            className="flex-1 p-3 bg-gray-50 rounded-2xl border-none font-bold outline-none"
-            onChange={e => setSearchTerm(e.target.value)}
-          />
-          <div className="flex gap-2">
-            <select className="bg-gray-50 p-3 rounded-2xl border-none font-bold text-sm" onChange={e=>setFilterType(e.target.value)}>
-              <option value="all">全部</option>
-              <option value="sell">出售</option>
-              <option value="buy">求购</option>
-            </select>
-            <select className="bg-gray-50 p-3 rounded-2xl border-none font-bold text-sm" onChange={e=>setSortOrder(e.target.value)}>
-              <option value="desc">价格↓</option>
-              <option value="asc">价格↑</option>
-            </select>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <input 
+              placeholder="🔍 搜门店 (杭州/上海...)" 
+              className="flex-1 p-5 bg-white rounded-3xl shadow-sm border border-gray-50 outline-none focus:ring-1 focus:ring-black transition-all text-sm font-bold"
+              value={searchStore}
+              onChange={e => setSearchStore(e.target.value)}
+            />
+            <input 
+              placeholder="📦 搜商品 (Labubu/Molly...)" 
+              className="flex-1 p-5 bg-white rounded-3xl shadow-sm border border-gray-50 outline-none focus:ring-1 focus:ring-black transition-all text-sm font-bold"
+              value={searchItem}
+              onChange={e => setSearchItem(e.target.value)}
+            />
           </div>
-        </div>
+        </section>
 
-        {/* 列表渲染 */}
+        {/* 专业卡片流 */}
         <div className="space-y-4">
           {displayPosts.map(post => (
-            <div key={post.id} className="bg-white p-5 rounded-[2rem] shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center border border-transparent hover:border-gray-200 transition-all gap-4">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className={`text-[9px] px-2 py-0.5 rounded-full font-black text-white ${post.type === 'sell' ? 'bg-red-500' : 'bg-blue-500'}`}>
+            <div key={post.id} className="bg-white p-6 rounded-[2.5rem] border border-gray-50 flex flex-col sm:flex-row justify-between items-center gap-6 hover:shadow-xl transition-all duration-500 group">
+              <div className="flex-1 text-center sm:text-left space-y-1">
+                <div className="flex items-center justify-center sm:justify-start gap-3">
+                  <span className={`text-[9px] px-2 py-0.5 rounded-full font-black tracking-widest ${post.type === 'sell' ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-500'}`}>
                     {post.type === 'sell' ? 'SELL' : 'BUY'}
                   </span>
-                  <span className="text-2xl font-black">￥{post.price}</span>
+                  <span className="text-3xl font-bold tracking-tight">￥{post.price}</span>
                 </div>
-                <h4 className="font-black text-lg">{post.shop}</h4>
-                <p className="text-gray-500 font-bold text-sm">{post.item}</p>
-                <p className="text-[9px] text-gray-300 font-bold mt-2">到期: {new Date(post.expires_at).toLocaleString()}</p>
+                <h4 className="text-lg font-bold pt-1">{post.shop}</h4>
+                <p className="text-gray-400 text-xs font-bold tracking-tight">{post.item}</p>
               </div>
-              <div className="flex items-center gap-3 w-full sm:w-auto">
+              
+              <div className="flex items-center gap-3">
                 <button 
-                  onClick={() => {navigator.clipboard.writeText(post.contact); alert('微信已复制！')}}
-                  className="flex-1 sm:flex-none bg-black text-white px-8 py-3 rounded-2xl text-xs font-black active:scale-90 transition-all"
+                  onClick={() => {navigator.clipboard.writeText(post.contact); alert('微信号已复制到剪贴板');}}
+                  className="bg-black text-white px-10 py-4 rounded-2xl text-[11px] font-black active:scale-90 transition-all shadow-xl"
                 >复制微信</button>
                 {post.user_phone === phone && (
-                  <button onClick={() => handleDelete(post.id)} className="w-10 h-10 flex items-center justify-center rounded-2xl bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-all">
-                    🗑️
+                  <button onClick={() => handleDelete(post.id)} className="p-4 text-gray-200 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                   </button>
                 )}
               </div>
             </div>
           ))}
+          {displayPosts.length === 0 && (
+            <div className="text-center py-24 text-gray-200 font-bold tracking-widest">NO DATA / 暂无专业数据</div>
+          )}
         </div>
       </main>
     </div>
